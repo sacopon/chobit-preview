@@ -1,0 +1,165 @@
+name: Sync Web previews to Pages
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/scripts/sync_pages.py
+      - .github/workflows/sync-pages.yml
+
+  push:
+    branches:
+      - main
+    paths:
+      - .github/scripts/sync_pages.py
+      - .github/workflows/sync-pages.yml
+
+  schedule:
+    - cron: "*/5 * * * *"
+
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: chobit-preview-pages
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check Python syntax
+        run: |
+          python3 -m py_compile .github/scripts/sync_pages.py
+
+  sync:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    env:
+      SITE_DIR: ${{ runner.temp }}/pages-site
+      STATE_REF: refs/heads/pages-state
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Load current Pages snapshot
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${SITE_DIR}"
+
+          if git fetch \
+            --no-tags \
+            --depth=1 \
+            origin \
+            "${STATE_REF}:refs/remotes/origin/pages-state"
+          then
+            git archive refs/remotes/origin/pages-state \
+              | tar -xf - -C "${SITE_DIR}"
+          else
+            echo "No existing pages-state branch; starting with an empty site."
+          fi
+
+      - name: Synchronize trusted private Artifacts
+        id: sync
+        env:
+          SOURCE_ARTIFACT_TOKEN: ${{ secrets.SOURCE_ARTIFACT_TOKEN }}
+        run: |
+          python3 .github/scripts/sync_pages.py \
+            --site-dir "${SITE_DIR}"
+
+      - name: Save current Pages snapshot
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+
+          remote_line="$(
+            git ls-remote --heads origin "${STATE_REF}"
+          )"
+          remote_oid="${remote_line%%$'\t'*}"
+
+          temporary_index="${RUNNER_TEMP}/pages-state.index"
+          rm -f "${temporary_index}"
+
+          export GIT_INDEX_FILE="${temporary_index}"
+
+          git read-tree --empty
+          git \
+            --git-dir="${GITHUB_WORKSPACE}/.git" \
+            --work-tree="${SITE_DIR}" \
+            add --all
+
+          tree_oid="$(git write-tree)"
+
+          commit_oid="$(
+            printf 'Update Pages snapshot from run %s\n' \
+              "${GITHUB_RUN_ID}" \
+              | git commit-tree "${tree_oid}"
+          )"
+
+          if [[ -n "${remote_oid}" ]]; then
+            git push \
+              --force-with-lease="${STATE_REF}:${remote_oid}" \
+              origin \
+              "${commit_oid}:${STATE_REF}"
+          else
+            git push \
+              origin \
+              "${commit_oid}:${STATE_REF}"
+          fi
+
+      - name: Configure GitHub Pages
+        if: >
+          steps.sync.outputs.changed == 'true' ||
+          github.event_name == 'workflow_dispatch'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload GitHub Pages artifact
+        if: >
+          steps.sync.outputs.changed == 'true' ||
+          github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ env.SITE_DIR }}
+          retention-days: 1
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        if: >
+          steps.sync.outputs.changed == 'true' ||
+          github.event_name == 'workflow_dispatch'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

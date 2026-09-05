@@ -9,14 +9,6 @@ on:
       - .github/workflows/sync-pages.yml
       - .github/workflows/validate-sync-pages.yml
 
-  push:
-    branches:
-      - main
-    paths:
-      - .github/scripts/sync_pages.py
-      - .github/workflows/sync-pages.yml
-      - .github/workflows/validate-sync-pages.yml
-
 permissions: {}
 
 jobs:

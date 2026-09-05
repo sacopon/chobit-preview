@@ -61,7 +61,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     env:
-      SITE_DIR: ${{ runner.temp }}/pages-site
+      SITE_DIR: ${{ github.workspace }}/.pages-site
       STATE_REF: refs/heads/pages-state
 
     steps:

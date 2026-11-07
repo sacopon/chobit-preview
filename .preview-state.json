@@ -1,0 +1,17 @@
+{
+  "main": {
+    "artifact_id": 13582679861,
+    "digest": "sha256:8751368ee901649614e6a1731d65e62c84ed106d6232f2c99c318775a9954297",
+    "head_sha": "f8aaaaa6467c92838bbf642336d28aa74cd8f3e8",
+    "run_id": 42395475081
+  },
+  "pull_requests": {
+    "343": {
+      "artifact_id": 13583512567,
+      "digest": "sha256:661e73e7bd1fbf528dafd9a436f2d38bc94cb6b816c20d23f00eade335b60b20",
+      "head_sha": "571df2e40084b2eed7cdc65fcb7f1f311ee20bef",
+      "run_id": 42395866401
+    }
+  },
+  "version": 1
+}
